@@ -20,12 +20,6 @@ setdate_and_increment () {
     export GIT_COMMITTER_DATE GIT_AUTHOR_DATE
 }
 
-test_object_file_size () {
-	oid=$(git rev-parse "$1")
-	path=".git/objects/$(test_oid_to_path $oid)"
-	test_file_size "$path"
-}
-
 test_expect_success setup '
 	# setup .mailmap
 	cat >.mailmap <<-EOF &&
@@ -40,7 +34,11 @@ test_expect_success setup '
 	git branch -M main &&
 	setdate_and_increment &&
 	git tag -a -m "Tagging at $datestamp" testtag &&
+	testtag_oid=$(git rev-parse refs/tags/testtag) &&
+	testtag_disksize=$(test_object_size $testtag_oid) &&
 	git update-ref refs/remotes/origin/main main &&
+	commit_oid=$(git rev-parse refs/heads/main) &&
+	commit_disksize=$(test_object_size $commit_oid) &&
 	git remote add origin nowhere &&
 	git config branch.main.remote origin &&
 	git config branch.main.merge refs/heads/main &&
@@ -129,7 +127,7 @@ test_atom head push:strip=1 remotes/myfork/main
 test_atom head push:strip=-1 main
 test_atom head objecttype commit
 test_atom head objectsize $((131 + hexlen))
-test_atom head objectsize:disk $(test_object_file_size refs/heads/main)
+test_atom head objectsize:disk $commit_disksize
 test_atom head deltabase $ZERO_OID
 test_atom head objectname $(git rev-parse refs/heads/main)
 test_atom head objectname:short $(git rev-parse --short refs/heads/main)
@@ -203,8 +201,8 @@ test_atom tag upstream ''
 test_atom tag push ''
 test_atom tag objecttype tag
 test_atom tag objectsize $((114 + hexlen))
-test_atom tag objectsize:disk $(test_object_file_size refs/tags/testtag)
-test_atom tag '*objectsize:disk' $(test_object_file_size refs/heads/main)
+test_atom tag objectsize:disk $testtag_disksize
+test_atom tag '*objectsize:disk' $commit_disksize
 test_atom tag deltabase $ZERO_OID
 test_atom tag '*deltabase' $ZERO_OID
 test_atom tag objectname $(git rev-parse refs/tags/testtag)

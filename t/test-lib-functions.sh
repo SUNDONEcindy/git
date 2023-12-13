@@ -1748,6 +1748,53 @@ test_oid_to_path () {
 	echo "${1%$basename}/$basename"
 }
 
+test_loose_object_size () {
+	test "$#" -ne 1 && BUG "1 param"
+	local path=$(test_oid_to_path "$1")
+	test_file_size "$(git rev-parse --git-path "objects/$path")" 2>&4
+}
+
+test_packed_object_size () {
+	test "$#" -ne 2 && BUG "2 params"
+	local oid=$1 idx=$2 packsize rawsz end
+
+	packsize=$(test_file_size "${idx%.idx}.pack")
+	rawsz=$(test_oid rawsz)
+	end=$(($packsize - $rawsz))
+
+	git show-index <"$idx" |
+	awk -v oid="$oid" -v end="$end" '
+		$2 == oid {start = $1}
+		{offsets[$1] = 1}
+		END {
+			if (!start || start >= end)
+				exit 1
+			for (o in offsets)
+				if (start < o && o < end)
+					end = o
+			print end - start
+		}
+	' && return 0
+
+	echo >&4 "error: '$oid' not found in '$idx'"
+	return 1
+}
+
+test_object_size () {
+	test "$#" -ne 1 && BUG "1 param"
+	local oid=$1
+
+	test_loose_object_size "$oid" 4>/dev/null && return 0
+
+	for idx in "$(git rev-parse --git-path objects/pack)"/pack-*.idx
+	do
+		test_packed_object_size "$oid" "$idx" 4>/dev/null && return 0
+	done
+
+	echo >&4 "error: '$oid' not found"
+	return 1
+}
+
 # Parse oids from git ls-files --staged output
 test_parse_ls_files_stage_oids () {
 	awk '{print $2}' -
